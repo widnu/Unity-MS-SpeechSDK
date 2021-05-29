@@ -467,6 +467,7 @@ namespace SpeechRecognitionService
 
                     var resStr = Encoding.UTF8.GetString(buffer, 0, wsResult.Count);
 
+
                     switch (wsResult.MessageType)
                     {
                         // Incoming text messages can be hypotheses about the words the service recognized or the final
@@ -513,6 +514,14 @@ namespace SpeechRecognitionService
             }
             catch (Exception ex)
             {
+
+#if WINDOWS_UWP
+                client.Close();
+#else
+                client.Dispose();
+                client.Abort();
+#endif
+
                 string msg = String.Format("Error: Something went while receiving a message. See error details below:{0}{1}{2}{3}",
                 Environment.NewLine, ex.ToString(), Environment.NewLine, ex.Message);
             }

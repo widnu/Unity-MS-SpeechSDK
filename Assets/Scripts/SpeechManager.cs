@@ -98,6 +98,14 @@ public class SpeechManager : MonoBehaviour {
     /// </remarks>
     public event EventHandler SpeechEnded;
 
+    // ovr microphone
+    [Tooltip("Will contain the string name of the selected microphone device - read only.")]
+    public string selectedDevice;
+    private int minFreq, maxFreq;
+    private int micFrequency = 48000;
+
+    public Text SubtitleLabel;
+
     private void Awake()
     {
         // Attempt to load API secrets
@@ -115,8 +123,81 @@ public class SpeechManager : MonoBehaviour {
         // settings since we are using an audio filter to capture samples.
         samplingRate = AudioSettings.outputSampleRate;
 
+        for (int i = 0; i < Microphone.devices.Length; ++i)
+        {
+
+            StopMicrophone();
+            selectedDevice = Microphone.devices[i].ToString();
+            Debug.Log($"selectedDevice{i} = {selectedDevice}");
+
+            //Android audio input
+            //Android camcorder input
+            //Android voice recognition input
+            
+            GetMicCaps();
+            StartMicrophone();
+        }
+
+
+        //selectedDevice = Microphone.devices[0].ToString();
+        //Debug.Log($"selectedDevice = {selectedDevice}");
+
         Debug.Log($"Initiating Cognitive Services Speech Recognition Service.");
         InitializeSpeechRecognitionService();
+    }
+    public void StartMicrophone()
+    {
+        //Starts recording
+        audiosource.clip = Microphone.Start(selectedDevice, true, 1, micFrequency);
+
+        System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
+
+        // Wait until the recording has started
+        while (!(Microphone.GetPosition(selectedDevice) > 0) && timer.Elapsed.TotalMilliseconds < 1000) {
+            Thread.Sleep(50);
+        }
+
+        if (Microphone.GetPosition(selectedDevice) <= 0)
+        {
+            throw new Exception("Timeout initializing microphone " + selectedDevice);
+        }
+        // Play the audio source
+        audiosource.Play();
+    }
+
+    public void StopMicrophone()
+    {
+
+        // Overriden with a clip to play? Don't stop the audio source
+        if ((audiosource != null) &&
+            (audiosource.clip != null) &&
+            (audiosource.clip.name == "Microphone"))
+        {
+            audiosource.Stop();
+        }
+
+        // Reset to stop mouth movement
+        /*
+        OVRLipSyncContext context = GetComponent<OVRLipSyncContext>();
+        context.ResetContext();
+*/
+        Microphone.End(selectedDevice);
+
+    }
+    public void GetMicCaps()
+    {
+        //Gets the frequency of the device
+        Microphone.GetDeviceCaps(selectedDevice, out minFreq, out maxFreq);
+
+        if (minFreq == 0 && maxFreq == 0)
+        {
+            Debug.LogWarning("GetMicCaps warning:: min and max frequencies are 0");
+            minFreq = 44100;
+            maxFreq = 44100;
+        }
+
+        if (micFrequency > maxFreq)
+            micFrequency = maxFreq;
     }
 
     // Update is called once per frame
@@ -155,7 +236,7 @@ public class SpeechManager : MonoBehaviour {
 
             // Make sure to match the region to the Azure region where you created the service.
             // Note the region is NOT used for the old Bing Speech service
-            region = "westus";
+            region = "australiaeast";
 
             auth = new CogSvcSocketAuthentication();
             Task<string> authenticating = auth.Authenticate(authenticationKey, region, useClassicBingSpeechService);
@@ -299,6 +380,8 @@ public class SpeechManager : MonoBehaviour {
     /// <returns></returns>
     IEnumerator WaitUntilRecoServiceIsReady()
     {
+        Debug.Log("WaitUntilRecoServiceIsReady..." + recoServiceClient.State);
+
         while (recoServiceClient.State != SpeechRecognitionClient.JobState.ReadyForAudioPackets &&
             recoServiceClient.State != SpeechRecognitionClient.JobState.Error)
         {
@@ -314,11 +397,11 @@ public class SpeechManager : MonoBehaviour {
 
                 Debug.Log("Initializing microphone for recording.");
                 // Passing null for deviceName in Microphone methods to use the default microphone.
-                audiosource.clip = Microphone.Start(null, true, maxRecordingDuration, samplingRate);
+                audiosource.clip = Microphone.Start(selectedDevice, true, maxRecordingDuration, samplingRate);
                 audiosource.loop = true;
 
                 // Wait until the microphone starts recording
-                while (!(Microphone.GetPosition(null) > 0)) { };
+                while (!(Microphone.GetPosition(selectedDevice) > 0)) { };
                 isRecognizing = true;
                 audiosource.Play();
                 Debug.Log("Microphone recording has started.");
@@ -359,6 +442,8 @@ public class SpeechManager : MonoBehaviour {
     {
         try
         {
+            Debug.Log("RecoServiceClient_OnMessageReceived: result: " + result);
+            Debug.Log("result.Path: " + result.Path);
             if (result.Path == SpeechServiceResult.SpeechMessagePaths.SpeechHypothesis)
             {
 
@@ -377,6 +462,9 @@ public class SpeechManager : MonoBehaviour {
                 Debug.Log("* FINAL RESULT: " + result.Result.DisplayText);
             }
 
+            Debug.Log($"call DisplayTextToneHereFor: {result.Result.DisplayText.ToString()}");
+            DisplayTextToneHereFor(result.Result.DisplayText.ToString(), 10f);
+
         }
         catch (Exception ex)
         {
@@ -389,11 +477,25 @@ public class SpeechManager : MonoBehaviour {
 
     private void UpdateUICanvasLabel(string text, FontStyle style)
     {
+        Debug.Log("* RECOGNITION STATUS: " + text);
         UnityDispatcher.InvokeOnAppThread(() =>
         {
             DisplayLabel.text = text;
             DisplayLabel.fontStyle = style;
         });
+    }
+
+    public void DisplayTextToneHereFor(string text, float time)
+    {
+        if(text != null && text != ""){
+            SubtitleLabel.text += string.Format("\n({0})", text);
+            Invoke("StopDisplaying", time);
+        }
+    }
+
+    void StopDisplaying()
+    {
+        DisplayLabel.text = "";
     }
 
     /// <summary>
@@ -406,7 +508,7 @@ public class SpeechManager : MonoBehaviour {
     /// <param name="data">The audio data is an array of floats ranging from[-1.0f;1.0f]. Here it contains 
     /// audio from AudioClip on the AudioSource, which itself receives data from the microphone.</param>
     /// <param name="channels"></param>
-    void OnAudioFilterRead(float[] data, int channels)
+    async void OnAudioFilterRead(float[] data, int channels)
     {
         try
         {
@@ -490,7 +592,7 @@ public class SpeechManager : MonoBehaviour {
                 }
                 else // if we're not recording, then we're in recognition mode
                 {
-                    recoServiceClient.SendAudioPacket(requestId, audiodata);
+                    await recoServiceClient.SendAudioPacket(requestId, audiodata);
                 }
             }
 
@@ -509,7 +611,7 @@ public class SpeechManager : MonoBehaviour {
     /// Thanks to my colleague David Douglas for this method from his WavUtility class.
     /// Source: https://github.com/deadlyfingers/UnityWav/blob/master/WavUtility.cs
     /// </summary>
-    private static byte[] ConvertAudioClipDataToInt16ByteArray(float[] data)
+    static byte[] ConvertAudioClipDataToInt16ByteArray(float[] data)
     {
         MemoryStream dataStream = new MemoryStream();
 
@@ -540,11 +642,11 @@ public class SpeechManager : MonoBehaviour {
         recordingSamples = 0;
 
         // Passing null for deviceName in Microphone methods to use the default microphone.
-        audiosource.clip = Microphone.Start(null, true, 1, samplingRate);
+        audiosource.clip = Microphone.Start(selectedDevice, true, 1, samplingRate);
         audiosource.loop = true;
 
         // Wait until the microphone starts recording
-        while (!(Microphone.GetPosition(null) > 0)) { };
+        while (!(Microphone.GetPosition(selectedDevice) > 0)) { };
         isRecording = true;
         audiosource.Play();
         Debug.Log("Microphone recording has started.");
@@ -561,7 +663,7 @@ public class SpeechManager : MonoBehaviour {
         UnityDispatcher.InvokeOnAppThread(() =>
         {
             audiosource.Stop();
-            Microphone.End(null);
+            Microphone.End(selectedDevice);
             if (isRecording)
             {
                 var audioData = new byte[recordingData.Count];

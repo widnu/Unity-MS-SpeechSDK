@@ -516,6 +516,7 @@ namespace SpeechRecognitionService
             {
 
 #if WINDOWS_UWP
+                client.Shutdown(SocketShutdown.Both);
                 client.Close();
 #else
                 client.Dispose();

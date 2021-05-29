@@ -508,7 +508,7 @@ public class SpeechManager : MonoBehaviour {
     /// <param name="data">The audio data is an array of floats ranging from[-1.0f;1.0f]. Here it contains 
     /// audio from AudioClip on the AudioSource, which itself receives data from the microphone.</param>
     /// <param name="channels"></param>
-    async void OnAudioFilterRead(float[] data, int channels)
+    void OnAudioFilterRead(float[] data, int channels)
     {
         try
         {
@@ -592,7 +592,7 @@ public class SpeechManager : MonoBehaviour {
                 }
                 else // if we're not recording, then we're in recognition mode
                 {
-                    await recoServiceClient.SendAudioPacket(requestId, audiodata);
+                    recoServiceClient.SendAudioPacket(requestId, audiodata);
                 }
             }
 
